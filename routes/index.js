@@ -217,6 +217,8 @@ function normalizeStreet(s) {
     s = s.replace(" AVENUE", " AVE");
     s = s.replace(" BOULEVARD", " BLVD");
     s = s.replace(" COURT", " CT");
+    s = s.replace(" PARKWAY", " PKWY");
+    s = s.replace(" ROAD", " RD");
     return s;
 }
 
