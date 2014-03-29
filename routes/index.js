@@ -18,7 +18,7 @@ db.open(function (err, db) {
 
 //TODO: error handling
 app.get('/geocoder/findByAddress', function (req, res) {
-    var streetAddr = req.query.addr;
+    var streetAddr = req.query.addr.replace("  ", " ");
     var zip = req.query.zip;
     var parts = streetAddr.split(" ");
     var street = normalizeStreet(parts.slice(1).join(" "));
@@ -27,16 +27,13 @@ app.get('/geocoder/findByAddress', function (req, res) {
     var feature = {};
     db.collection('features', function (err, collection) {
         collection.find(buildQueryObj(num, street, zip)).toArray(function (err, items) {
-            for (var i = 0; i < items.length; i++) {
-                var temp = findFeature(num, zip, items[i]);
-                if (temp !== null) {
-                    feature = temp;
-                    break;
-                }
-            }
+
+            feature = searchFeatures(items, num, zip);
             var loc = {};
             if (feature.geometry !== undefined) {
                 loc = computeLocation(num, feature.geometry.coordinates, feature.properties.LFROMADD, feature.properties.LTOADD, feature.properties.RFROMADD, feature.properties.RTOADD);
+            } else {
+                console.log("did not find loc for " + num + " " + street + " " + zip);
             }
             res.header("Content-Type", "application/json");
             res.send(loc);
@@ -47,14 +44,40 @@ app.get('/geocoder/findByAddress', function (req, res) {
 
 
 /**
+ * searches for the feature to use within the list passed in. It will first attempt to find the record with the same zip code. If not possible, it will
+ * return the first match where num falls within the address range.
+ *
+ * @param items
+ * @param num
+ * @param zip
+ * @returns {*}
+ */
+function searchFeatures(items, num, zip) {
+    for (var i = 0; i < items.length; i++) {
+        var temp = findFeature(num, zip, items[i], true);
+        if (temp !== null) {
+            return temp;
+        }
+    }
+    for (var i = 0; i < items.length; i++) {
+        var temp = findFeature(num, zip, items[i], false);
+        if (temp !== null) {
+            return temp;
+        }
+    }
+    return {};
+}
+
+/**
  * finds which feature within the list that match the query should be used based on where the address falls in the ranges
  * @param num
  * @param zip
  * @param item
+ * @param useZip
  * @returns {*}
  */
-function findFeature(num, zip, item) {
-    if (((item.properties.RFROMADD % 2 === 0 && num % 2 === 0) || (item.properties.RFROMADD % 2 !== 0 && num % 2 !== 0)) && item.properties.ZIPR == zip) {
+function findFeature(num, zip, item, useZip) {
+    if (((item.properties.RFROMADD % 2 === 0 && num % 2 === 0) || (item.properties.RFROMADD % 2 !== 0 && num % 2 !== 0)) && (!useZip || item.properties.ZIPR == zip)) {
         //if the address is odd and the right side is odd
         if (num >= item.properties.RFROMADD && num <= item.properties.RTOADD) {
             return item;
@@ -62,7 +85,7 @@ function findFeature(num, zip, item) {
         } else if (num <= item.properties.RFROMADD && num >= item.properties.RTOADD) {
             return item;
         }
-    } else if (item.properties.ZIPL == zip) {
+    } else if (!useZip || item.properties.ZIPL == zip) {
         if (num >= item.properties.LFROMADD && num <= item.properties.LTOADD) {
             return item;
         } else if (num <= item.properties.LFROMADD && num >= item.properties.LTOADD) {
@@ -109,7 +132,7 @@ function computeLocation(num, coordinates, lFromAdd, lToAdd, rFromAdd, rToAdd) {
                 addrPct = (num - rFromAdd) / (rToAdd - rFromAdd);
             }
         } else {
-            if (lFromAdd % 2 != 2) {
+            if (lFromAdd % 2 !== 0) {
                 loc.side = 'L';
                 addrPct = (num - lFromAdd) / (lToAdd - lFromAdd);
             } else {
@@ -156,7 +179,7 @@ function buildQueryObj(num, street, zip) {
 
     var queryObj = {
         "properties.ROADFLG": "Y",
-        "nameupper": street.toUpperCase(),
+        "nameupper": new RegExp(street.toUpperCase()),
         $or: [
             {
                 "properties.ZIPL": zip
@@ -213,13 +236,44 @@ function normalizeStreet(s) {
     s = s.replace("SOUTH ", "S ");
     s = s.replace("EAST ", "E ");
     s = s.replace("WEST ", "W ");
-    s = s.replace(" STREET", " ST");
-    s = s.replace(" AVENUE", " AVE");
-    s = s.replace(" BOULEVARD", " BLVD");
-    s = s.replace(" COURT", " CT");
-    s = s.replace(" PARKWAY", " PKWY");
-    s = s.replace(" ROAD", " RD");
-    return s;
+    s = s.replace((/\bSTREET\b/, "ST");
+    s = s.replace((/\bAVENUE\b/, "AVE");
+    s = s.replace((/\bBOULEVARD\b/, "BLVD");
+    s = s.replace((/\bCOURT\b/, "CT");
+    s = s.replace((/\bCIRCLE\b/, "CIR");
+    s = s.replace((/\bPARKWAY\b/, "PKWY");
+    s = s.replace((/\bROAD\b/, "RD");
+    s = s.replace(/\bDRIVE\b/, "DR");
+    s = s.replace(/\bHIGHWAY\b/, "HWY");
+    s = s.replace(/\bPLACE\b/,"PL");
+    s = s.replace((/\bLANE\b/, "LN");
+    s = s.replace("FIRST ", "1ST ");
+    s = s.replace("SECOND ", "2ND ");
+    s = s.replace("THIRD ", "3RD ");
+    s = s.replace("FOURTH ", "4TH ");
+    s = s.replace("FIFTH ", "5TH ");
+    s = s.replace("SIXTH ", "6TH ");
+    s = s.replace("SEVENTH ", "7TH ");
+    s = s.replace("EIGHTH ", "8TH ");
+    s = s.replace("NINTH ", "9TH ");
+    s = s.replace("TENTH ", "10TH ");
+
+    s = s.replace("TLP#", "");
+    s = s.replace(/UNIT(\s\S+)?/, "");
+    s = s.replace(/SUITE(\s\S+)?/, "");
+    s = s.replace("(", "");
+    s = s.replace(")", "");
+    s = s.replace("#", "");
+    s = s.replace("@", "");
+    s = s.replace("-", "");
+
+    //strip off any unit number at the end of the string
+    var matches = s.match(/\d+$/);
+    if (matches) {
+        s = s.replace(matches[0], "");
+    }
+    s = s.replace(/\bAT\s/,"");
+    return s.trim();
 }
 
 /**

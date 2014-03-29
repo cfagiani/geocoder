@@ -19,7 +19,7 @@ db.features.find({properties: {$exists:true}, "properties.FULLNAME" : {$ne: null
  db.features.update(
    { _id: doc._id},
    { $set : {
-     "nameupper": doc.properties.FULLNAME.toUpperCase(),
+     "nameupper": doc.properties.FULLNAME.toUpperCase().replace("NORTH ","N ").replace("SOUTH ","S ").replace("EAST ","E ").replace("WEST ","W ") ,
      "properties.RFROMADD" : parseInt(doc.properties.RFROMADD),
      "properties.RTOADD" : parseInt(doc.properties.RTOADD),
      "properties.LFROMADD" : parseInt(doc.properties.LFROMADD),
